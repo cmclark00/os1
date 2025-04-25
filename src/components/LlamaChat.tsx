@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Textarea } from "@/components/textarea";
-import { Send, Mic, MicOff, BrainCircuit} from "lucide-react";
+import { Send, Mic, MicOff, BrainCircuit, Volume2, VolumeX } from "lucide-react";
 import { addMemory, preloadEmbeddingModel, getAllMemories, deleteMemory, MemoryRecord } from "@/lib/memory";
 import { toast } from "sonner";
 import { buildLlamaContext } from "@/lib/contextBuilder";
@@ -35,6 +35,7 @@ export function LlamaChat() {
   const [isTTSProcessing, setIsTTSProcessing] = useState(false);
   const [audioChunkQueue, setAudioChunkQueue] = useState<Blob[]>([]);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   
   const ttsQueue = useRef<TTSRequest[]>([]);
   const isProcessingTTS = useRef(false);
@@ -230,6 +231,7 @@ export function LlamaChat() {
 
     //console.log("Setting src and playing:", url);
     audioRef.current.src = url;
+    audioRef.current.muted = isMuted;
     
     setIsAudioPlaying(true);
     
@@ -244,7 +246,7 @@ export function LlamaChat() {
       }
       setIsAudioPlaying(false);
     });
-  }, [audioChunkQueue.length, isAudioPlaying]);
+  }, [audioChunkQueue.length, isAudioPlaying, isMuted]);
 
   const generateWelcomeBackMessage = useCallback(async () => {
       if (isProcessingRef.current || status !== 'ready') {
@@ -809,6 +811,17 @@ export function LlamaChat() {
   }, [isMemoryViewerOpen]);
   // --- End effect --- 
 
+  // Effect to update mute status on audio element when changed
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
+  const toggleMute = useCallback(() => {
+    setIsMuted(prev => !prev);
+  }, []);
+
   return (
     <div className="os1-container">
       <OS1Animation 
@@ -859,6 +872,13 @@ export function LlamaChat() {
               title="View Memories"
             >
               <BrainCircuit className="icon" />
+            </button>
+            <button
+              className={`mute-button ${isMuted ? 'muted' : ''}`}
+              onClick={toggleMute}
+              title={isMuted ? "Unmute" : "Mute"}
+            >
+              {isMuted ? <VolumeX className="icon" /> : <Volume2 className="icon" />}
             </button>
             <div className="mic-button-wrapper">
               <button

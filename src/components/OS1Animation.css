@@ -683,4 +683,32 @@ body.os1-theme {
 .send-button .icon {
   width: 20px;
   height: 20px;
+}
+
+/* --- Mute Button Styles --- */
+.mute-button {
+  background: none;
+  border: none;
+  color: white;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s, color 0.2s, transform 0.2s;
+}
+
+.mute-button:hover {
+  opacity: 1;
+}
+
+.mute-button.muted {
+  color: #ff8a80;
+  opacity: 1;
+}
+
+.mute-button .icon {
+  width: 20px;
+  height: 20px;
 } 
