@@ -88,12 +88,6 @@ export function LlamaChat() {
     return () => { document.body.classList.remove('os1-theme'); };
   }, []);
 
-  // Clear any text-only mode from localStorage to ensure regular mode on future startups
-  useEffect(() => {
-    // Clear text-only mode setting to ensure we start in regular mode by default
-    localStorage.removeItem('os1_textOnlyMode');
-  }, []);
-
   const buildContextMemo = useCallback(async (userInput: string) => {
     try {
       return await buildLlamaContext(userInput);
@@ -865,20 +859,8 @@ export function LlamaChat() {
         }
       } else {
         // If turning off text-only mode, restart audio functionality
-        // Text-only mode was on and now we're turning it off
-        
-        // Speak the last message if we have one to restore audio
-        if (messages.length > 0) {
-          const lastMessage = messages[messages.length - 1];
-          if (lastMessage.role === "assistant" && lastMessage.content.trim()) {
-            // Queue up TTS for the last response
-            hasAutoSpoken.current = false; // Reset this flag to allow speaking
-            queueMicrotask(() => {
-              speakText(lastMessage.content.trim());
-              hasAutoSpoken.current = true;
-            });
-          }
-        }
+        // We don't need to speak the last message as it caused duplicate speech
+        // Simply turning off text-only mode is sufficient - future messages will be spoken
       }
       
       return newValue;
