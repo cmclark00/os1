@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Textarea } from "@/components/textarea";
-import { Send, Mic, MicOff, BrainCircuit, Volume2, VolumeX } from "lucide-react";
+import { Send, Mic, MicOff, BrainCircuit, Volume2, VolumeX, MessageSquare, MessageSquareText } from "lucide-react";
 import { addMemory, preloadEmbeddingModel, getAllMemories, deleteMemory, MemoryRecord } from "@/lib/memory";
 import { toast } from "sonner";
 import { buildLlamaContext } from "@/lib/contextBuilder";
@@ -36,6 +36,11 @@ export function LlamaChat() {
   const [audioChunkQueue, setAudioChunkQueue] = useState<Blob[]>([]);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isTextOnly, setIsTextOnly] = useState(() => {
+    const savedMode = localStorage.getItem('os1_textOnlyMode');
+    // Only enable text-only mode if explicitly set to 'true', otherwise default to regular mode
+    return savedMode === 'true';
+  });
   
   const ttsQueue = useRef<TTSRequest[]>([]);
   const isProcessingTTS = useRef(false);
@@ -81,6 +86,12 @@ export function LlamaChat() {
   useEffect(() => {
     document.body.classList.add('os1-theme');
     return () => { document.body.classList.remove('os1-theme'); };
+  }, []);
+
+  // Clear any text-only mode from localStorage to ensure regular mode on future startups
+  useEffect(() => {
+    // Clear text-only mode setting to ensure we start in regular mode by default
+    localStorage.removeItem('os1_textOnlyMode');
   }, []);
 
   const buildContextMemo = useCallback(async (userInput: string) => {
@@ -145,7 +156,7 @@ export function LlamaChat() {
   const speakText = (text: string) => {
     if (!text || !kokoroWorker.current) return;
     const trimmedText = text.trim();
-    if (trimmedText === "") return;
+    if (trimmedText === "" || isTextOnly) return;
 
     // --- Add Sanitization ---
     const sanitizedText = trimmedText.replace(/\*/g, ''); // Remove all asterisks
@@ -185,8 +196,8 @@ export function LlamaChat() {
   };
 
   const playNextChunk = useCallback(() => {
-    if (audioChunkQueue.length === 0) {
-      //console.log("PlayNextChunk: Queue empty, skipping.");
+    if (audioChunkQueue.length === 0 || isTextOnly) {
+      //console.log("PlayNextChunk: Queue empty or text-only mode enabled, skipping.");
       return;
     }
     
@@ -246,7 +257,7 @@ export function LlamaChat() {
       }
       setIsAudioPlaying(false);
     });
-  }, [audioChunkQueue.length, isAudioPlaying, isMuted]);
+  }, [audioChunkQueue.length, isAudioPlaying, isMuted, isTextOnly]);
 
   const generateWelcomeBackMessage = useCallback(async () => {
       if (isProcessingRef.current || status !== 'ready') {
@@ -755,11 +766,11 @@ export function LlamaChat() {
   }, []);
 
   useEffect(() => {
-    if (!isAudioPlaying && audioChunkQueue.length > 0) {
-      //console.log("Effect: Triggering playNextChunk (Queue > 0, Not Playing)");
+    if (!isAudioPlaying && audioChunkQueue.length > 0 && !isTextOnly) {
+      //console.log("Effect: Triggering playNextChunk (Queue > 0, Not Playing, Not Text-Only)");
       playNextChunk();
     }
-  }, [isAudioPlaying, audioChunkQueue.length, playNextChunk]);
+  }, [isAudioPlaying, audioChunkQueue.length, playNextChunk, isTextOnly]);
 
   // --- Handlers for Memory Viewer ---
   const fetchMemories = useCallback(async () => {
@@ -822,6 +833,58 @@ export function LlamaChat() {
     setIsMuted(prev => !prev);
   }, []);
 
+  // Toggle text-only mode
+  const toggleTextMode = useCallback(() => {
+    setIsTextOnly(prev => {
+      const newValue = !prev;
+      localStorage.setItem('os1_textOnlyMode', newValue.toString());
+      
+      // If turning on text mode, stop any current audio and clear processing
+      if (newValue) {
+        // Stop audio playback
+        if (audioRef.current) {
+          if (!audioRef.current.paused) {
+            audioRef.current.pause();
+          }
+          audioRef.current.removeAttribute('src');
+        }
+        
+        // Clear audio queue and processing
+        setIsAudioPlaying(false);
+        setAudioChunkQueue([]);
+        
+        // Clear any pending TTS processing
+        ttsQueue.current = [];
+        isProcessingTTS.current = false;
+        setIsTTSProcessing(false);
+        
+        // Clean up any audio URLs
+        if (currentAudioUrlRef.current) {
+          URL.revokeObjectURL(currentAudioUrlRef.current);
+          currentAudioUrlRef.current = null;
+        }
+      } else {
+        // If turning off text-only mode, restart audio functionality
+        // Text-only mode was on and now we're turning it off
+        
+        // Speak the last message if we have one to restore audio
+        if (messages.length > 0) {
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage.role === "assistant" && lastMessage.content.trim()) {
+            // Queue up TTS for the last response
+            hasAutoSpoken.current = false; // Reset this flag to allow speaking
+            queueMicrotask(() => {
+              speakText(lastMessage.content.trim());
+              hasAutoSpoken.current = true;
+            });
+          }
+        }
+      }
+      
+      return newValue;
+    });
+  }, [messages]);
+
   return (
     <div className="os1-container">
       <OS1Animation 
@@ -843,6 +906,21 @@ export function LlamaChat() {
       
       {status === "ready" && (
         <>
+          <div className="chat-container">
+            <div className="centered-content">
+              <div className="messages-container">
+                {messages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`message ${msg.role === "user" ? "user" : "assistant"}`}
+                  >
+                    {msg.content}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          
           {micStream && isRecording && (
             <div className="audio-visualizer-container">
               <div className="visualizer-glow"></div>
@@ -874,9 +952,17 @@ export function LlamaChat() {
               <BrainCircuit className="icon" />
             </button>
             <button
+              className={`text-mode-button ${isTextOnly ? 'active' : ''}`}
+              onClick={toggleTextMode}
+              title={isTextOnly ? "Turn on audio" : "Text only mode"}
+            >
+              {isTextOnly ? <MessageSquareText className="icon" /> : <MessageSquare className="icon" />}
+            </button>
+            <button
               className={`mute-button ${isMuted ? 'muted' : ''}`}
               onClick={toggleMute}
               title={isMuted ? "Unmute" : "Mute"}
+              disabled={isTextOnly}
             >
               {isMuted ? <VolumeX className="icon" /> : <Volume2 className="icon" />}
             </button>
